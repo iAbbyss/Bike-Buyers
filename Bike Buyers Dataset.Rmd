@@ -1,0 +1,272 @@
+---
+title: "A Quick Look into Bike Buyers Dataset"
+author: "Florencia"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+#import csv
+bike_buyers <- read.csv("E:/Bike Buyers/bike_buyers.csv")
+```
+
+### 1.Basic data characteristics
+```{r}
+dim(bike_buyers)
+```
+**EXPLANATION**
+
+The dim function returns the dimension of the bike_buyers dataset. it shows that the bike_buyers dataset has 1000 rows and 13 columns ( 1000 instances and 13 attributes)
+
+
+```{r}
+str(bike_buyers)
+writeLines("\n")
+sapply(bike_buyers, class)
+```
+**EXPLANATION**
+
+there are two different data types in the bike_buyers dataset which are integer (ID, Income, Children, Cars, Age) and character (Marital.Status, Gender, Education, Occupation, Home.Owner, Commute Distance, Region, Purchased.Bike)
+
+```{r}
+BasicSummary <- function(df, dgts = 3){
+  m <- ncol(df)
+varNames <- colnames(df)
+varType <- vector("character",m)
+topLevel <- vector("character",m)
+topCount <- vector("numeric",m)
+missCount <- vector("numeric",m)
+levels <- vector("numeric", m)
+
+for (i in 1:m){
+x <- df[,i]
+varType[i] <- class(x)
+xtab <- table(x, useNA = "ifany")
+levels[i] <- length(xtab)
+nums <- as.numeric(xtab)
+maxnum <- max(nums)
+topCount[i] <- maxnum
+maxIndex <- which.max(nums)
+lvls <- names(xtab)
+topLevel[i] <- lvls[maxIndex]
+missIndex <- which((is.na(x)) | (x == "") | (x == " "))
+missCount[i] <- length(missIndex)
+}
+n <- nrow(df)
+topFrac <- round(topCount/n, digits = dgts)
+missFrac <- round(missCount/n, digits = dgts)
+## #
+summaryFrame <- data.frame(variable = varNames, type = varType,
+ levels = levels, topLevel = topLevel,
+ topCount = topCount, topFrac = topFrac,
+ missFreq = missCount, missFrac = missFrac)
+ return(summaryFrame)
+ }
+
+BasicSummary(bike_buyers)
+```
+ **EXPLANATION**
+ 
+ It is clear that all the variables have clear and simple explanatory names which are not difficult to understand and it describes the data in the dataset.
+ From the 7 variables in the dataset, 5 of them were integer, and the rest is character.
+ It can be seen that the integer variables has more levels than the character variables.
+ 
+ 
+### 2. Summary Statistics
+
+```{r}
+summary(bike_buyers)
+
+writeLines("Mean:")
+sapply(bike_buyers[, c(4,12)], mean, na.rm=TRUE)
+writeLines("\nDescription:")
+sapply(bike_buyers[, c(4,12)], quantile, na.rm=TRUE)
+```
+
+```{r}
+library(Hmisc)
+describe(bike_buyers)
+```
+ **EXPLANATION**
+ 
+ Missing values were found in the bike_buyers dataset, 7 missing values in Marital.Status variable, 11 in Gender variable, 6 in Income variable, 8 missing values iin CHildren variable, 4 in Home.Owner variable, 9 in Cars variables, and 8 missing values in the Age variable.
+ 
+```{r}
+bike_buyers[, c(2,3,6:8, 10, 11, 13)] <- lapply(bike_buyers[, c(2,3,6:8, 10, 11, 13)], as.factor)
+```
+
+
+### 3. Data anomalies
+```{r}
+ThreeSigma <- function(x, t = 3){
+
+ mu <- mean(x, na.rm = TRUE)
+ sig <- sd(x, na.rm = TRUE)
+ if (sig == 0){
+ message("All non-missing x-values are identical")
+}
+ up <- mu + t * sig
+ down <- mu - t * sig
+ out <- list(up = up, down = down)
+ return(out)
+ }
+
+Hampel <- function(x, t = 3){
+
+ mu <- median(x, na.rm = TRUE)
+ sig <- mad(x, na.rm = TRUE)
+ if (sig == 0){
+ message("Hampel identifer implosion: MAD scale estimate is zero")
+ }
+ up <- mu + t * sig
+ down <- mu - t * sig
+ out <- list(up = up, down = down)
+ return(out)
+ }
+   
+BoxplotRule<- function(x, t = 1.5){
+
+ xL <- quantile(x, na.rm = TRUE, probs = 0.25, names = FALSE)
+ xU <- quantile(x, na.rm = TRUE, probs = 0.75, names = FALSE)
+ Q <- xU - xL
+ if (Q == 0){message("Boxplot rule implosion: interquartile distance is zero")
+ }
+ up <- xU + t * Q
+ down <- xU - t * Q
+ out <- list(up = up, down = down)
+ return(out)
+}   
+
+ExtractDetails <- function(x, down, up){
+
+ outClass <- rep("N", length(x))
+ indexLo <- which(x < down)
+ indexHi <- which(x > up)
+ outClass[indexLo] <- "L"
+ outClass[indexHi] <- "U"
+ index <- union(indexLo, indexHi)
+ values <- x[index]
+ outClass <- outClass[index]
+ nOut <- length(index)
+ maxNom <- max(x[which(x <= up)])
+ minNom <- min(x[which(x >= down)])
+ outList <- list(nOut = nOut, lowLim = down,
+ upLim = up, minNom = minNom,
+ maxNom = maxNom, index = index,
+ values = values,
+ outClass = outClass)
+ return(outList)
+ }
+```
+
+```{r}
+FindOutliers <- function(x, t3 = 3, tH = 3, tb = 1.5){
+ threeLims <- ThreeSigma(x, t = t3)
+ HampLims <- Hampel(x, t = tH)
+ boxLims <- BoxplotRule(x, t = tb)
+
+ n <- length(x)
+ nMiss <- length(which(is.na(x)))
+
+ threeList <- ExtractDetails(x, threeLims$down, threeLims$up)
+ HampList <- ExtractDetails(x, HampLims$down, HampLims$up)
+ boxList <- ExtractDetails(x, boxLims$down, boxLims$up)
+
+ sumFrame <- data.frame(method = "ThreeSigma", n = n,
+ nMiss = nMiss, nOut = threeList$nOut,
+ lowLim = threeList$lowLim,
+ upLim = threeList$upLim,
+ minNom = threeList$minNom,
+ maxNom = threeList$maxNom)
+ upFrame <- data.frame(method = "Hampel", n = n,
+ nMiss = nMiss, nOut = HampList$nOut,
+ lowLim = HampList$lowLim,
+ upLim = HampList$upLim,
+ minNom = HampList$minNom,
+ maxNom = HampList$maxNom)
+ sumFrame <- rbind.data.frame(sumFrame, upFrame)
+ upFrame <- data.frame(method = "BoxplotRule", n = n,
+ nMiss = nMiss, nOut = boxList$nOut,
+ lowLim = boxList$lowLim,
+ upLim = boxList$upLim,
+ minNom = boxList$minNom,
+ maxNom = boxList$maxNom)
+ sumFrame <- rbind.data.frame(sumFrame, upFrame)
+
+ threeFrame <- data.frame(index = threeList$index,
+ values = threeList$values,
+ type = threeList$outClass)
+ HampFrame <- data.frame(index = HampList$index,
+ values = HampList$values,
+ type = HampList$outClass)
+ boxFrame <- data.frame(index = boxList$index,
+ values = boxList$values,
+ type = boxList$outClass)
+ outList <- list(summary = sumFrame, threeSigma = threeFrame,
+ Hampel = HampFrame, boxplotRule = boxFrame)
+ return(outList)
+}
+
+
+```
+
+```{r}
+FullSummary <- FindOutliers(bike_buyers$Income)
+FullSummary$summary
+```
+ **EXPLANATION**
+ From these three method of finding the outliers, three of them detect the same amount of the outliers which is 10 outliers.
+ For the upper and lower limit, the BoxplotRule has the lowest upper and lower outlier limit among the three of them, but it does'nt give that big/ much difference
+ The lower and upper limits of the non-outlying data values of the three rule has the same value
+
+```{r}
+rcorr(as.matrix(bike_buyers[c(1,4,5, 9, 12)]), type = "spearman")
+```
+```{r}
+hist.data.frame(bike_buyers)
+plot(bike_buyers)
+```
+```{r}
+Table <- table(bike_buyers$Income, bike_buyers$Purchased.Bike, bike_buyers$Gender)
+print(Table)
+```
+
+
+```{r}
+Table <- table(bike_buyers$Age, bike_buyers$Marital.Status)
+print(Table)
+```
+```{r}
+matrix <- layout( matrix(c(1,2,3,4), nrow=2, byrow=TRUE) )
+
+mosaicplot(Gender~Purchased.Bike, 
+           data = bike_buyers,
+           main = "Gender vs Purchased Bike",
+           col = "pink",
+           las=1,
+           shade = TRUE)
+
+boxplot(Income~Purchased.Bike,
+        data = bike_buyers,
+        xlab = "Purchased Bike",
+        main = "Purchased bike status over Income",
+        col = "lightblue")
+
+boxplot(Age~Marital.Status,
+           data = bike_buyers,
+        main = "Marital Status by age",
+        col = "lightgreen")
+
+mosaicplot(Children~Purchased.Bike,
+           data = bike_buyers,
+           main = "",
+           col = "lightyellow")
+```
+ **EXPLANATION**
+ 
+The first plot in the upper left tells us that the amount of bike purchased by the female and male gender has not much difference
+ 
+In the second plot (the upper right), the income of the buyers doesn't really affect the purchased bike, so people with higher income will not be guaranteed to buy the bike.
+
+The third plot (lower left), indicates that most people with high age  have the status of being married and for the last plot, people with range 0-4 children tend to purchased bike rather than people with 5 children which is the most amount of children in the dataset.
+ 
